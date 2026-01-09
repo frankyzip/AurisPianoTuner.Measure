@@ -18,6 +18,7 @@ namespace AurisPianoTuner.Measure.Services
         private int _targetMidi;
         private double _targetFreq;
         private bool _hasTarget = false;
+        private PianoMetadata? _pianoMetadata;
 
         public event EventHandler<NoteMeasurement>? MeasurementUpdated;
 
@@ -32,6 +33,12 @@ namespace AurisPianoTuner.Measure.Services
                            + 0.14128 * Math.Cos(4 * Math.PI * i / (FftSize - 1))
                            - 0.01168 * Math.Cos(6 * Math.PI * i / (FftSize - 1));
             }
+        }
+
+        public void SetPianoMetadata(PianoMetadata metadata)
+        {
+            _pianoMetadata = metadata;
+            System.Diagnostics.Debug.WriteLine($"[FftAnalyzer] Piano metadata set: {metadata.Type}, {metadata.DimensionCm}cm, Scale Break: {GetNoteName(metadata.ScaleBreakMidiNote)}");
         }
 
         public void SetTargetNote(int midiIndex, double theoreticalFrequency)
@@ -74,7 +81,14 @@ namespace AurisPianoTuner.Measure.Services
                 NoteName = GetNoteName(_targetMidi)
             };
 
-            // Oplossing Audit Punt 4.2: Analyse van 16 partieeltonen voor inharmoniciteit
+            // Check if we're near the scale break for extra logging
+            bool isNearScaleBreak = false;
+            if (_pianoMetadata != null)
+            {
+                int scaleBreak = _pianoMetadata.ScaleBreakMidiNote;
+                isNearScaleBreak = Math.Abs(_targetMidi - scaleBreak) <= 2;
+            }
+
             for (int n = 1; n <= 16; n++)
             {
                 double centerFreq = _targetFreq * n;
@@ -82,13 +96,11 @@ namespace AurisPianoTuner.Measure.Services
                 if (partial != null) result.DetectedPartials.Add(partial);
             }
 
-            // Selecteer beste partial voor dit register (wetenschappelijk onderbouwd)
             var measuredPartial = SelectBestPartialForMeasurement(result.DetectedPartials, _targetMidi);
             
             if (measuredPartial != null)
             {
                 result.MeasuredPartialNumber = measuredPartial.n;
-                // Bereken werkelijke fundamentele uit gemeten partial
                 result.CalculatedFundamental = measuredPartial.Frequency / measuredPartial.n;
             }
             else
@@ -97,9 +109,28 @@ namespace AurisPianoTuner.Measure.Services
                 result.CalculatedFundamental = 0;
             }
 
-            // Altijd event verzenden, ook zonder partials voor debugging
             result.Quality = result.DetectedPartials.Count > 5 ? "Groen" : 
                            result.DetectedPartials.Count > 0 ? "Oranje" : "Rood";
+
+            // Metadata-aware logging
+            if (_pianoMetadata != null)
+            {
+                string scaleBreakWarning = isNearScaleBreak ? " [NEAR SCALE BREAK]" : "";
+                System.Diagnostics.Debug.WriteLine(
+                    $"[{_pianoMetadata.Type}] {result.NoteName} (MIDI {_targetMidi}): " +
+                    $"{result.DetectedPartials.Count}/16 partials, " +
+                    $"using n={result.MeasuredPartialNumber}, " +
+                    $"Quality: {result.Quality}{scaleBreakWarning}"
+                );
+
+                if (isNearScaleBreak)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"  ??  Scale break region - expect possible inharmonicity transition"
+                    );
+                }
+            }
+
             MeasurementUpdated?.Invoke(this, result);
         }
 

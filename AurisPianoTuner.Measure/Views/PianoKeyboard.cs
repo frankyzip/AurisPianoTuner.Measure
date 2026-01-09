@@ -55,31 +55,38 @@ namespace AurisPianoTuner.Measure.Views
             _whiteKeyWidth = this.ActualWidth / TotalWhiteKeys;
             double blackKeyWidth = _whiteKeyWidth * BlackKeyWidthRatio;
 
+            // Eerst alle witte toetsen tekenen en posities onthouden
+            var whiteKeyPositions = new Dictionary<int, double>();
             int whiteKeyIndex = 0;
 
-            // Eerst alle witte toetsen
             for (int midi = 21; midi <= 108; midi++)
             {
                 if (!IsBlackKey(midi))
                 {
-                    DrawWhiteKey(midi, whiteKeyIndex * _whiteKeyWidth);
+                    double xPos = whiteKeyIndex * _whiteKeyWidth;
+                    whiteKeyPositions[midi] = xPos;
+                    DrawWhiteKey(midi, xPos);
                     whiteKeyIndex++;
                 }
             }
 
-            // Dan alle zwarte toetsen (bovenop de witte)
-            whiteKeyIndex = 0;
+            // Dan alle zwarte toetsen op de juiste positie tussen witte toetsen
             for (int midi = 21; midi <= 108; midi++)
             {
                 if (IsBlackKey(midi))
                 {
-                    // Bereken positie: tussen twee witte toetsen
-                    double xPos = (whiteKeyIndex * _whiteKeyWidth) + (_whiteKeyWidth * 0.7);
-                    DrawBlackKey(midi, xPos, blackKeyWidth);
-                }
-                else
-                {
-                    whiteKeyIndex++;
+                    // Vind de witte toets links van deze zwarte toets
+                    int whiteBefore = midi - 1;
+                    while (whiteBefore >= 21 && IsBlackKey(whiteBefore))
+                        whiteBefore--;
+
+                    if (whiteBefore >= 21 && whiteKeyPositions.ContainsKey(whiteBefore))
+                    {
+                        // Plaats zwarte toets aan de rechterkant van de linker witte toets
+                        // (op de scheiding tussen twee witte toetsen)
+                        double xPos = whiteKeyPositions[whiteBefore] + _whiteKeyWidth;
+                        DrawBlackKey(midi, xPos, blackKeyWidth);
+                    }
                 }
             }
         }
@@ -206,16 +213,17 @@ namespace AurisPianoTuner.Measure.Views
 
         private bool IsBlackKey(int midiIndex)
         {
-            int noteInOctave = (midiIndex - 9) % 12; // A=0, A#=1, B=2, C=3, etc.
-            string[] notes = { "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#" };
-            return notes[noteInOctave].Contains("#");
+            int noteIndex = midiIndex % 12;
+            // C=0, C#=1, D=2, D#=3, E=4, F=5, F#=6, G=7, G#=8, A=9, A#=10, B=11
+            // Zwarte toetsen: C#, D#, F#, G#, A# = indices 1, 3, 6, 8, 10
+            return noteIndex == 1 || noteIndex == 3 || noteIndex == 6 || noteIndex == 8 || noteIndex == 10;
         }
 
         private string GetNoteName(int midiIndex)
         {
-            string[] notes = { "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#" };
+            string[] notes = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
             int octave = (midiIndex / 12) - 1;
-            int noteIndex = (midiIndex - 9) % 12;
+            int noteIndex = midiIndex % 12;
             return notes[noteIndex] + octave;
         }
     }

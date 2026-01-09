@@ -17,21 +17,23 @@ namespace AurisPianoTuner.Measure.Services
             {
                 WriteIndented = true,
                 PropertyNameCaseInsensitive = true,
-                DefaultIgnoreCondition = JsonIgnoreCondition.Never
+                DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+                Converters = { new JsonStringEnumConverter() }
             };
         }
 
-        public void SaveMeasurements(string filePath, Dictionary<int, NoteMeasurement> measurements)
+        public void SaveMeasurements(string filePath, Dictionary<int, NoteMeasurement> measurements, PianoMetadata? pianoMetadata = null)
         {
             try
             {
                 // Converteer naar een serializeerbaar formaat
                 var data = new MeasurementFileData
                 {
-                    Version = "1.0",
+                    Version = "1.1",
                     CreatedAt = DateTime.Now,
                     SampleRate = 96000,
                     FftSize = 32768,
+                    PianoMetadata = pianoMetadata ?? new PianoMetadata(),
                     Measurements = new List<NoteMeasurement>(measurements.Values)
                 };
 
@@ -44,7 +46,7 @@ namespace AurisPianoTuner.Measure.Services
             }
         }
 
-        public Dictionary<int, NoteMeasurement> LoadMeasurements(string filePath)
+        public (Dictionary<int, NoteMeasurement> measurements, PianoMetadata? metadata) LoadMeasurements(string filePath)
         {
             try
             {
@@ -68,7 +70,7 @@ namespace AurisPianoTuner.Measure.Services
                     result[measurement.MidiIndex] = measurement;
                 }
 
-                return result;
+                return (result, data.PianoMetadata);
             }
             catch (Exception ex)
             {
@@ -82,6 +84,7 @@ namespace AurisPianoTuner.Measure.Services
             public DateTime CreatedAt { get; set; }
             public int SampleRate { get; set; }
             public int FftSize { get; set; }
+            public PianoMetadata? PianoMetadata { get; set; }
             public List<NoteMeasurement> Measurements { get; set; } = new();
         }
     }

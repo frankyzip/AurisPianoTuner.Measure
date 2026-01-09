@@ -5,7 +5,7 @@ namespace AurisPianoTuner.Measure.Services
 {
     public interface IMeasurementStorageService
     {
-        void SaveMeasurements(string filePath, Dictionary<int, NoteMeasurement> measurements);
-        Dictionary<int, NoteMeasurement> LoadMeasurements(string filePath);
+        void SaveMeasurements(string filePath, Dictionary<int, NoteMeasurement> measurements, PianoMetadata? pianoMetadata = null);
+        (Dictionary<int, NoteMeasurement> measurements, PianoMetadata? metadata) LoadMeasurements(string filePath);
     }
 }

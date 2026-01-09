@@ -7,6 +7,7 @@ namespace AurisPianoTuner.Measure.Services
     {
         void ProcessAudioBuffer(float[] samples);
         void SetTargetNote(int midiIndex, double theoreticalFrequency);
+        void SetPianoMetadata(PianoMetadata metadata);
         event EventHandler<NoteMeasurement> MeasurementUpdated;
         void Reset();
     }

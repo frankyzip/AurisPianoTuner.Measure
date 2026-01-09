@@ -1,0 +1,65 @@
+<Window x:Class="AurisPianoTuner.Measure.Views.MeasurementAnalysisWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Measurement Analysis Report" 
+        Height="700" Width="900" 
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F5F5">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="?? Measurement Analysis Report" FontSize="24" FontWeight="Bold" Margin="0,0,0,5"/>
+            <TextBlock x:Name="TxtSubtitle" Text="Roland FP-30 Digital Piano Test" FontSize="14" Foreground="Gray"/>
+        </StackPanel>
+
+        <!-- Report Content (Scrollable, Monospace) -->
+        <Border Grid.Row="1" Background="White" BorderBrush="#DDD" BorderThickness="1" CornerRadius="5">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="15">
+                <TextBox x:Name="TxtReport" 
+                         IsReadOnly="True"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         VerticalScrollBarVisibility="Disabled"
+                         HorizontalScrollBarVisibility="Disabled"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <Button x:Name="BtnCopyToClipboard" 
+                    Content="?? Copy to Clipboard" 
+                    Width="160" Height="35" 
+                    Background="#4CAF50" 
+                    Foreground="White" 
+                    FontWeight="Bold" 
+                    Margin="0,0,10,0"
+                    ToolTip="Copy entire report to clipboard for external analysis"/>
+            
+            <Button x:Name="BtnExportTxt" 
+                    Content="?? Export as .TXT" 
+                    Width="160" Height="35" 
+                    Background="#2196F3" 
+                    Foreground="White" 
+                    FontWeight="Bold" 
+                    Margin="0,0,10,0"
+                    ToolTip="Save report as text file"/>
+            
+            <Button x:Name="BtnClose" 
+                    Content="Close" 
+                    Width="100" Height="35" 
+                    Background="#757575" 
+                    Foreground="White" 
+                    FontWeight="Bold"/>
+        </StackPanel>
+    </Grid>
+</Window>

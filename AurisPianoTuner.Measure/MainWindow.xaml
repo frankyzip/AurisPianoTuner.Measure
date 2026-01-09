@@ -3,16 +3,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:AurisPianoTuner.Measure.Views"
         Title="AurisMeasure - Professional Piano Measurement" 
-        Height="700" Width="1100" WindowStartupLocation="CenterScreen">
+        Height="750" Width="1200" WindowStartupLocation="CenterScreen">
 
     <Grid Background="#F0F0F0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <!-- Metadata Bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Piano Metadata Bar -->
             <RowDefinition Height="*"/>
             <!-- Note Card & Spectrum -->
             <RowDefinition Height="130"/>
-            <!-- Full Width Keyboard (korter gemaakt) -->
+            <!-- Full Width Keyboard -->
         </Grid.RowDefinitions>
 
         <!-- 1. Metadata Bar -->
@@ -28,13 +30,59 @@
                 <!-- Save/Load buttons -->
                 <Button x:Name="BtnSave" Content="💾 Opslaan" Margin="20,0,5,0" Padding="10,2" Background="#4CAF50" Foreground="White" FontWeight="Bold"/>
                 <Button x:Name="BtnLoad" Content="📂 Laden" Margin="5,0" Padding="10,2" Background="#2196F3" Foreground="White" FontWeight="Bold"/>
+                <Button x:Name="BtnAnalyzeDrift" Content="📊 Analyze Drift" Margin="5,0" Padding="10,2" Background="#FF9800" Foreground="White" FontWeight="Bold" ToolTip="Compare with old measurements to detect pitch drift"/>
+                <Button x:Name="BtnAnalyzeReport" Content="📋 Analysis Report" Margin="5,0" Padding="10,2" Background="#9C27B0" Foreground="White" FontWeight="Bold" ToolTip="View detailed measurement analysis and statistics"/>
                 
                 <Button Content="Audio Settings" Margin="20,0" Padding="10,2"/>
             </StackPanel>
         </Border>
 
-        <!-- 2. Midden Sectie -->
-        <Grid Grid.Row="1">
+        <!-- 2. Piano Metadata Bar -->
+        <Border Grid.Row="1" Background="#555" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Row 1: Essential Metadata -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                    <TextBlock Text="Piano Type:" Foreground="White" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <ComboBox x:Name="ComboPianoType" Width="180" SelectedIndex="0"/>
+                    
+                    <TextBlock Text="Dimension:" Foreground="White" VerticalAlignment="Center" Margin="20,0,5,0"/>
+                    <TextBox x:Name="TxtDimension" Width="60" VerticalContentAlignment="Center"/>
+                    <TextBlock Text="cm" Foreground="White" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                    
+                    <TextBlock Text="Scale Break:" Foreground="White" VerticalAlignment="Center" Margin="20,0,5,0"/>
+                    <ComboBox x:Name="ComboScaleBreak" Width="100" SelectedIndex="9"/>
+                    
+                    <TextBlock Text="Manufacturer:" Foreground="White" VerticalAlignment="Center" Margin="20,0,5,0"/>
+                    <TextBox x:Name="TxtManufacturer" Width="120" VerticalContentAlignment="Center"/>
+                    
+                    <TextBlock Text="Model:" Foreground="White" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <TextBox x:Name="TxtModel" Width="100" VerticalContentAlignment="Center"/>
+                </StackPanel>
+                
+                <!-- Row 2: Environmental Conditions (Optional) -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,5,0,0">
+                    <TextBlock Text="Environment (Optional):" Foreground="LightGray" VerticalAlignment="Center" Margin="10,0,10,0" FontSize="11"/>
+                    
+                    <TextBlock Text="Temp:" Foreground="White" VerticalAlignment="Center" Margin="5,0,5,0"/>
+                    <TextBox x:Name="TxtTemperature" Width="50" VerticalContentAlignment="Center" ToolTip="Temperature in °C"/>
+                    <TextBlock Text="°C" Foreground="White" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                    
+                    <TextBlock Text="Humidity:" Foreground="White" VerticalAlignment="Center" Margin="20,0,5,0"/>
+                    <TextBox x:Name="TxtHumidity" Width="50" VerticalContentAlignment="Center" ToolTip="Relative humidity in %"/>
+                    <TextBlock Text="%" Foreground="White" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                    
+                    <TextBlock x:Name="LblMeasurementDate" Text="" Foreground="LightGray" VerticalAlignment="Center" Margin="20,0,0,0" FontSize="11"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 3. Midden Sectie -->
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1*"/>
                 <!-- Note Card -->
@@ -63,13 +111,13 @@
             </Border>
         </Grid>
 
-        <!-- 3. Full Width Keyboard (custom control) -->
-        <Border Grid.Row="2" Background="White" BorderBrush="Black" BorderThickness="0,1,0,0" Padding="5">
+        <!-- 4. Full Width Keyboard (custom control) -->
+        <Border Grid.Row="3" Background="White" BorderBrush="Black" BorderThickness="0,1,0,0" Padding="5">
             <views:PianoKeyboard x:Name="PianoKeyboard" Height="120"/>
         </Border>
 
         <!-- Start/Stop Knop zwevend -->
-        <StackPanel Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="30">
+        <StackPanel Grid.Row="2" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="30">
             <Button x:Name="BtnStart" Content="START MEASUREMENT" Background="Green" Foreground="White" Width="180" Height="50" FontWeight="Bold" IsEnabled="False"/>
         </StackPanel>
     </Grid>

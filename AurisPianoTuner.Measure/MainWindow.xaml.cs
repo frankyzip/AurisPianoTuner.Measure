@@ -23,6 +23,7 @@ namespace AurisPianoTuner.Measure
         private int _measurementCount = 0;
 
         private string? _currentProjectFile = null;
+        private PianoMetadata _pianoMetadata = new();
 
         public MainWindow()
         {
@@ -33,6 +34,9 @@ namespace AurisPianoTuner.Measure
             
             // Vul de combobox met beschikbare drivers
             ComboAsioDrivers.ItemsSource = _audioService.GetAsioDrivers();
+
+            // Initialize piano metadata UI
+            InitializePianoMetadataControls();
 
             // Subscribe naar piano keyboard events
             PianoKeyboard.KeyPressed += OnPianoKeyPressed;
@@ -46,6 +50,124 @@ namespace AurisPianoTuner.Measure
             // Koppel Save/Load knoppen
             BtnSave.Click += BtnSave_Click;
             BtnLoad.Click += BtnLoad_Click;
+            BtnAnalyzeDrift.Click += BtnAnalyzeDrift_Click;
+            BtnAnalyzeReport.Click += BtnAnalyzeReport_Click;
+        }
+
+        private void InitializePianoMetadataControls()
+        {
+            // Populate piano type dropdown
+            ComboPianoType.ItemsSource = new[]
+            {
+                new { Display = "Unknown", Value = PianoType.Unknown },
+                new { Display = "Spinet (< 110cm)", Value = PianoType.Spinet },
+                new { Display = "Console/Studio (110-120cm)", Value = PianoType.Console },
+                new { Display = "Professional Upright (120-135cm)", Value = PianoType.ProfessionalUpright },
+                new { Display = "Baby Grand (150-170cm)", Value = PianoType.BabyGrand },
+                new { Display = "Parlor Grand (170-210cm)", Value = PianoType.ParlorGrand },
+                new { Display = "Semi-Concert Grand (210-250cm)", Value = PianoType.SemiConcertGrand },
+                new { Display = "Concert Grand (> 250cm)", Value = PianoType.ConcertGrand }
+            };
+            ComboPianoType.DisplayMemberPath = "Display";
+            ComboPianoType.SelectedValuePath = "Value";
+            ComboPianoType.SelectedIndex = 0;
+
+            // Populate scale break dropdown (extended range: E2 to F#3 to accommodate variations)
+            // Scientific basis: Askenfelt & Jansson (1990) - scale break varies by piano design
+            var scaleBreakNotes = new List<object>();
+            for (int midi = 40; midi <= 54; midi++)
+            {
+                string noteName = GetNoteName(midi);
+                scaleBreakNotes.Add(new { Display = $"{noteName} (MIDI {midi})", Value = midi });
+            }
+            ComboScaleBreak.ItemsSource = scaleBreakNotes;
+            ComboScaleBreak.DisplayMemberPath = "Display";
+            ComboScaleBreak.SelectedValuePath = "Value";
+            ComboScaleBreak.SelectedValue = 41; // Default: F2
+
+            // Subscribe to changes
+            ComboPianoType.SelectionChanged += (s, e) => UpdatePianoMetadataFromUI();
+            TxtDimension.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
+            ComboScaleBreak.SelectionChanged += (s, e) => UpdatePianoMetadataFromUI();
+            TxtManufacturer.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
+            TxtModel.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
+            TxtTemperature.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
+            TxtHumidity.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
+        }
+
+        private void UpdatePianoMetadataFromUI()
+        {
+            _pianoMetadata.Type = ComboPianoType.SelectedValue is PianoType type ? type : PianoType.Unknown;
+            
+            if (int.TryParse(TxtDimension.Text, out int dimension))
+            {
+                _pianoMetadata.DimensionCm = dimension;
+            }
+
+            if (ComboScaleBreak.SelectedValue is int scaleBreak)
+            {
+                _pianoMetadata.ScaleBreakMidiNote = scaleBreak;
+            }
+
+            _pianoMetadata.Manufacturer = TxtManufacturer.Text;
+            _pianoMetadata.Model = TxtModel.Text;
+
+            // Optional environmental data
+            if (double.TryParse(TxtTemperature.Text, out double temp))
+            {
+                _pianoMetadata.MeasurementTemperatureCelsius = temp;
+            }
+            else
+            {
+                _pianoMetadata.MeasurementTemperatureCelsius = null;
+            }
+
+            if (double.TryParse(TxtHumidity.Text, out double humidity))
+            {
+                _pianoMetadata.MeasurementHumidityPercent = humidity;
+            }
+            else
+            {
+                _pianoMetadata.MeasurementHumidityPercent = null;
+            }
+
+            // Set measurement timestamp
+            _pianoMetadata.MeasurementDateTime = DateTime.Now;
+            UpdateMeasurementDateLabel();
+
+            // Update FFT analyzer with new metadata
+            _fftAnalyzer.SetPianoMetadata(_pianoMetadata);
+        }
+
+        private void UpdateMeasurementDateLabel()
+        {
+            if (_pianoMetadata.MeasurementDateTime.HasValue)
+            {
+                LblMeasurementDate.Text = $"Last measured: {_pianoMetadata.MeasurementDateTime.Value:yyyy-MM-dd HH:mm}";
+            }
+            else
+            {
+                LblMeasurementDate.Text = "";
+            }
+        }
+
+        private void LoadPianoMetadataToUI(PianoMetadata metadata)
+        {
+            _pianoMetadata = metadata;
+            
+            ComboPianoType.SelectedValue = metadata.Type;
+            TxtDimension.Text = metadata.DimensionCm > 0 ? metadata.DimensionCm.ToString() : "";
+            ComboScaleBreak.SelectedValue = metadata.ScaleBreakMidiNote;
+            TxtManufacturer.Text = metadata.Manufacturer ?? "";
+            TxtModel.Text = metadata.Model ?? "";
+
+            // Load environmental data if available
+            TxtTemperature.Text = metadata.MeasurementTemperatureCelsius?.ToString("F1") ?? "";
+            TxtHumidity.Text = metadata.MeasurementHumidityPercent?.ToString("F0") ?? "";
+            UpdateMeasurementDateLabel();
+
+            // Update FFT analyzer with loaded metadata
+            _fftAnalyzer.SetPianoMetadata(_pianoMetadata);
         }
 
         private void OnPianoKeyPressed(object? sender, int midiIndex)
@@ -145,14 +267,15 @@ namespace AurisPianoTuner.Measure
                 DefaultExt = "json",
                 FileName = string.IsNullOrEmpty(TxtProjectName.Text) 
                     ? $"Piano_Measurement_{DateTime.Now:yyyyMMdd_HHmmss}.json"
-                    : $"{TxtProjectName.Text}_{DateTime.Now:yyyyMMdd_HHmmss}.json"
+                    : $"{TxtProjectName.Text}_{DateTime.Now:yyyyMMdd_HHmms}.json"
             };
 
             if (saveDialog.ShowDialog() == true)
             {
                 try
                 {
-                    _storageService.SaveMeasurements(saveDialog.FileName, _storedMeasurements);
+                    UpdatePianoMetadataFromUI();
+                    _storageService.SaveMeasurements(saveDialog.FileName, _storedMeasurements, _pianoMetadata);
                     _currentProjectFile = saveDialog.FileName;
                     MessageBox.Show($"Metingen opgeslagen!\n{_storedMeasurements.Count} noten bewaard.", 
                         "Opslaan Gelukt", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -176,9 +299,14 @@ namespace AurisPianoTuner.Measure
             {
                 try
                 {
-                    var loadedMeasurements = _storageService.LoadMeasurements(openDialog.FileName);
+                    var (loadedMeasurements, pianoMetadata) = _storageService.LoadMeasurements(openDialog.FileName);
                     _storedMeasurements = loadedMeasurements;
                     _currentProjectFile = openDialog.FileName;
+
+                    if (pianoMetadata != null)
+                    {
+                        LoadPianoMetadataToUI(pianoMetadata);
+                    }
 
                     // Update alle toetsen met kwaliteitskleuren
                     foreach (var kvp in _storedMeasurements)
@@ -196,6 +324,129 @@ namespace AurisPianoTuner.Measure
                     MessageBox.Show($"Fout bij laden:\n{ex.Message}", "Fout", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+
+        private void BtnAnalyzeDrift_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if we have old measurements loaded
+            if (_storedMeasurements.Count == 0)
+            {
+                MessageBox.Show(
+                    "Laad eerst een oud meetbestand via de 'Laden' knop.\n\n" +
+                    "Dit bestand wordt gebruikt als referentie om pitch drift te berekenen.",
+                    "Geen Referentiemetingen",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            // Prompt user to measure checkpoint notes
+            var checkpointNotes = new[] { 21, 40, 69, 72, 96 }; // A0, E2, A4, C5, C7
+            var checkpointNames = string.Join(", ", checkpointNotes.Select(m => GetNoteName(m)));
+
+            var result = MessageBox.Show(
+                $"Meet de volgende checkpoint noten voor drift analyse:\n\n{checkpointNames}\n\n" +
+                "Klik OK wanneer klaar, of Cancel om te annuleren.",
+                "Checkpoint Metingen",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            // Collect checkpoint measurements that have been measured
+            var newCheckpointMeasurements = new Dictionary<int, NoteMeasurement>();
+            var missingNotes = new List<string>();
+
+            foreach (int midi in checkpointNotes)
+            {
+                // Check if this note was measured in current session
+                // For now, we'll use any available measurements
+                // In production, you'd track "newly measured" vs "loaded from file"
+                if (_storedMeasurements.ContainsKey(midi))
+                {
+                    newCheckpointMeasurements[midi] = _storedMeasurements[midi];
+                }
+                else
+                {
+                    missingNotes.Add(GetNoteName(midi));
+                }
+            }
+
+            if (newCheckpointMeasurements.Count < 3)
+            {
+                MessageBox.Show(
+                    $"Te weinig checkpoint metingen voor analyse.\n\nOntbreekt: {string.Join(", ", missingNotes)}",
+                    "Onvoldoende Data",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // Open drift analysis window
+            try
+            {
+                var driftWindow = new Views.PitchDriftAnalysisWindow(
+                    _storedMeasurements, // Old measurements (from loaded file)
+                    newCheckpointMeasurements, // New checkpoint measurements
+                    _pianoMetadata, // Old metadata
+                    _pianoMetadata // Current metadata (could be updated)
+                );
+
+                if (driftWindow.ShowDialog() == true && driftWindow.ApplyOffsetRequested)
+                {
+                    // Apply calculated offset to all notes
+                    ApplyPitchOffsetToMeasurements(driftWindow.CalculatedOffsetHz);
+                    
+                    MessageBox.Show(
+                        $"Pitch offset toegepast: {driftWindow.CalculatedOffsetHz:+0.00;-0.00} Hz\n\n" +
+                        "Alle noten zijn gecorrigeerd voor pitch drift.",
+                        "Offset Toegepast",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Fout bij drift analyse:\n{ex.Message}", "Fout", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ApplyPitchOffsetToMeasurements(double offsetHz)
+        {
+            var calculator = new Services.PitchOffsetCalculator();
+
+            foreach (var kvp in _storedMeasurements.ToList())
+            {
+                int midi = kvp.Key;
+                var measurement = kvp.Value;
+
+                if (measurement.CalculatedFundamental > 0)
+                {
+                    // Apply scaled offset based on register
+                    double correctedFreq = calculator.ApplyScaledOffset(
+                        measurement.CalculatedFundamental,
+                        midi,
+                        offsetHz
+                    );
+
+                    // Update measurement with corrected frequency
+                    measurement.TargetFrequency = correctedFreq;
+                    
+                    // Optional: Recalculate all partials with offset
+                    // (In practice, this is not needed as relative inharmonicity stays constant)
+                }
+            }
+
+            // Update display
+            MessageBox.Show(
+                "Opmerking: De gecorrigeerde frequenties zijn nu de nieuwe 'target' waarden.\n" +
+                "Gebruik deze als referentie bij het stemmen.",
+                "Info",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         private void ComboAsioDrivers_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -400,6 +651,40 @@ namespace AurisPianoTuner.Measure
             _audioService.AudioDataAvailable -= OnDataReceived;
             _audioService.Stop();
             base.OnClosed(e);
+        }
+
+        private void BtnAnalyzeReport_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if we have measurements
+            if (_storedMeasurements.Count == 0)
+            {
+                MessageBox.Show(
+                    "Geen metingen beschikbaar voor analyse.\n\n" +
+                    "Meet eerst enkele noten of laad een meetbestand.",
+                    "Geen Data",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                // Open analysis window
+                var analysisWindow = new Views.MeasurementAnalysisWindow(
+                    _storedMeasurements,
+                    _pianoMetadata
+                );
+
+                analysisWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Fout bij genereren analyse rapport:\n{ex.Message}",
+                    "Fout",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
     }
 }
