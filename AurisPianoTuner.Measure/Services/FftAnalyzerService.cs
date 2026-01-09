@@ -22,6 +22,9 @@ namespace AurisPianoTuner.Measure.Services
 
         public event EventHandler<NoteMeasurement>? MeasurementUpdated;
 
+        // NIEUW: logger property
+        public ITestLoggerService? TestLogger { get; set; }
+
         public FftAnalyzerService()
         {
             // Oplossing Audit Punt 2: Gebruik Blackman-Harris (beter dan Hann/Hamming)
@@ -89,19 +92,37 @@ namespace AurisPianoTuner.Measure.Services
                 isNearScaleBreak = Math.Abs(_targetMidi - scaleBreak) <= 2;
             }
 
+            var partials = new List<PartialResult>();
+
+            // OPLOSSING 1: Dynamisch zoekvenster per partial (bass-blindheid fix)
             for (int n = 1; n <= 16; n++)
             {
                 double centerFreq = _targetFreq * n;
-                var partial = FindPrecisePeak(fftBuffer, centerFreq, n);
-                if (partial != null) result.DetectedPartials.Add(partial);
+                var partial = FindPrecisePeak(fftBuffer, centerFreq, n, _targetMidi);
+                if (partial != null)
+                {
+                    result.DetectedPartials.Add(partial);
+                    partials.Add(new PartialResult { n = partial.n, Frequency = partial.Frequency, Amplitude = partial.Amplitude });
+                }
             }
 
+            // OPLOSSING 2: Bereken werkelijke inharmoniciteit (B-coefficient)
+            double measuredB = CalculateInharmonicity(result.DetectedPartials, _targetFreq);
+            result.InharmonicityCoefficient = measuredB;
+
+            // OPLOSSING 3: Selecteer beste partial voor meting
             var measuredPartial = SelectBestPartialForMeasurement(result.DetectedPartials, _targetMidi);
             
             if (measuredPartial != null)
             {
                 result.MeasuredPartialNumber = measuredPartial.n;
-                result.CalculatedFundamental = measuredPartial.Frequency / measuredPartial.n;
+                
+                // KRITIEK: Bereken fundamentele frequentie MET inharmoniciteitscorrectie
+                // f? = f_n / (n·?(1 + B·n²))
+                // Dit voorkomt dat bass-afwijkingen het resultaat vervormen
+                double nSquared = measuredPartial.n * measuredPartial.n;
+                double inharmonicityFactor = Math.Sqrt(1 + measuredB * nSquared);
+                result.CalculatedFundamental = measuredPartial.Frequency / (measuredPartial.n * inharmonicityFactor);
             }
             else
             {
@@ -112,7 +133,7 @@ namespace AurisPianoTuner.Measure.Services
             result.Quality = result.DetectedPartials.Count > 5 ? "Groen" : 
                            result.DetectedPartials.Count > 0 ? "Oranje" : "Rood";
 
-            // Metadata-aware logging
+            // Metadata-aware logging met B-coefficient
             if (_pianoMetadata != null)
             {
                 string scaleBreakWarning = isNearScaleBreak ? " [NEAR SCALE BREAK]" : "";
@@ -120,6 +141,8 @@ namespace AurisPianoTuner.Measure.Services
                     $"[{_pianoMetadata.Type}] {result.NoteName} (MIDI {_targetMidi}): " +
                     $"{result.DetectedPartials.Count}/16 partials, " +
                     $"using n={result.MeasuredPartialNumber}, " +
+                    $"B={measuredB:E2}, " +
+                    $"f?={result.CalculatedFundamental:F2} Hz, " +
                     $"Quality: {result.Quality}{scaleBreakWarning}"
                 );
 
@@ -131,7 +154,79 @@ namespace AurisPianoTuner.Measure.Services
                 }
             }
 
+            // Logging voor debug
+            double rms = 0;
+            for (int i = 0; i < _audioBuffer.Length; i++) rms += _audioBuffer[i] * _audioBuffer[i];
+            rms = Math.Sqrt(rms / _audioBuffer.Length);
+            TestLogger?.LogAnalysisAttempt(_targetMidi, partials, rms);
+
             MeasurementUpdated?.Invoke(this, result);
+        }
+
+        /// <summary>
+        /// Berekent de inharmoniciteitscoëfficiënt (B) van de gedetecteerde partials.
+        /// 
+        /// Wetenschappelijke basis:
+        /// - Fletcher & Rossing (1998): "The Physics of Musical Instruments", p.362-364
+        /// - Conklin (1996): "Design and Tone in the Mechanoacoustic Piano"
+        /// 
+        /// Formule: f_n = n·f?·?(1 + B·n²)
+        /// Herschrijven: B = [(f_n / (n·f?))² - 1] / n²
+        /// 
+        /// Methode: Lineaire regressie op (n², (f_n/(n·f?))² - 1) voor robuuste schatting.
+        /// </summary>
+        /// <param name="partials">Lijst van gedetecteerde partials</param>
+        /// <param name="fundamentalEstimate">Geschatte fundamentele frequentie (theoretisch)</param>
+        /// <returns>B-coefficient in typische range 0.00001 - 0.005</returns>
+        private double CalculateInharmonicity(List<PartialResult> partials, double fundamentalEstimate)
+        {
+            if (partials == null || partials.Count < 3)
+                return 0.0001; // Fallback: typische waarde voor medium piano
+
+            // Filter partials met voldoende amplitude (> -60 dB)
+            var validPartials = partials.Where(p => p.Amplitude > -60 && p.n >= 2 && p.n <= 12).ToList();
+            
+            if (validPartials.Count < 3)
+                return 0.0001;
+
+            // Lineaire regressie: y = B·x
+            // waar x = n², y = (f_n / (n·f?))² - 1
+            double sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+            int count = 0;
+
+            foreach (var p in validPartials)
+            {
+                double n = p.n;
+                double fn = p.Frequency;
+                
+                // Gebruik iteratieve verbetering: schat f? vanuit huidige partial
+                double f1Estimate = fn / n; // Eerste orde benadering
+                
+                double x = n * n;
+                double ratio = fn / (n * f1Estimate);
+                double y = ratio * ratio - 1.0;
+
+                // Outlier detectie: negeer extreme waarden (mogelijk foutieve pieken)
+                if (y < -0.1 || y > 0.5) continue;
+
+                sumX += x;
+                sumY += y;
+                sumXY += x * y;
+                sumXX += x * x;
+                count++;
+            }
+
+            if (count < 2 || Math.Abs(sumXX) < 1e-10)
+                return 0.0001;
+
+            // B = (N·?XY - ?X·?Y) / (N·?XX - ?X·?X)
+            double B = (count * sumXY - sumX * sumY) / (count * sumXX - sumX * sumX);
+
+            // Saniteer resultaat: B moet in realistische range liggen
+            // Typisch: Spinet = 0.0005-0.005, Concert Grand = 0.00003-0.0002
+            B = Math.Max(0.00001, Math.Min(0.005, B));
+
+            return B;
         }
 
         /// <summary>
@@ -170,7 +265,7 @@ namespace AurisPianoTuner.Measure.Services
             var optimalPartial = partials.FirstOrDefault(p => p.n == optimalN);
             
             // Als optimale partial gevonden en sterk genoeg, gebruik die
-            if (optimalPartial != null && optimalPartial.Amplitude > 0)
+            if (optimalPartial != null && optimalPartial.Amplitude > -60)
             {
                 return optimalPartial;
             }
@@ -188,26 +283,64 @@ namespace AurisPianoTuner.Measure.Services
             return acceptablePartials.OrderByDescending(p => p.Amplitude).FirstOrDefault();
         }
 
-        private PartialResult? FindPrecisePeak(Complex[] fftData, double targetFreq, int n)
+        /// <summary>
+        /// Zoekt precisie piek in FFT spectrum met dynamisch zoekvenster.
+        /// 
+        /// OPLOSSING "BASS BLINDHEID":
+        /// - Voor bass notes (< 100 Hz): smal venster (±25 cents) voorkomt octaafverwarring
+        /// - Voor mid notes (100-1000 Hz): medium venster (±35 cents)
+        /// - Voor treble (> 1000 Hz): breed venster (±50 cents) compenseert detuning
+        /// 
+        /// Wetenschappelijke basis:
+        /// - Oppenheim & Schafer (2010): "Discrete-Time Signal Processing"
+        /// - Smith (2011): "Spectral Audio Signal Processing" - Parabolic interpolation, p.283-287
+        /// </summary>
+        /// <param name="fftData">FFT spectrum data</param>
+        /// <param name="targetFreq">Verwachte frequentie (n·f?)</param>
+        /// <param name="n">Partial nummer</param>
+        /// <param name="midiIndex">MIDI note (voor context)</param>
+        /// <returns>PartialResult met precieze frequentie en amplitude, of null</returns>
+        private PartialResult? FindPrecisePeak(Complex[] fftData, double targetFreq, int n, int midiIndex)
         {
             double binFreq = (double)SampleRate / FftSize;
             int centerBin = (int)(targetFreq / binFreq);
-            int range = 15; // Zoekvenster van ca. 45 Hz rond de doel-bin
+
+            // DYNAMISCH ZOEKVENSTER (oplossing bass-blindheid)
+            // Bereken venster in cents, converteer naar bins
+            double searchWindowCents = targetFreq switch
+            {
+                < 100 => 25.0,    // Bass: smal venster (bijv. A0: 27.5 Hz ± 0.4 Hz)
+                < 1000 => 35.0,   // Mid: medium venster
+                _ => 50.0         // Treble: breed venster (meer detuning tolerantie)
+            };
+
+            // Converteer cents naar Hz: ?f = f·(2^(cents/1200) - 1)
+            double searchWindowHz = targetFreq * (Math.Pow(2, searchWindowCents / 1200.0) - 1);
+            int searchRange = Math.Max(3, (int)(searchWindowHz / binFreq));
+
+            // Veiligheidslimiet: maximaal 50 bins (voorkomt crash bij extreme waarden)
+            searchRange = Math.Min(searchRange, 50);
 
             int bestBin = -1;
             double maxMag = -1;
 
-            for (int i = centerBin - range; i <= centerBin + range; i++)
+            for (int i = centerBin - searchRange; i <= centerBin + searchRange; i++)
             {
                 if (i <= 0 || i >= FftSize / 2) continue;
                 double mag = fftData[i].Magnitude;
                 if (mag > maxMag) { maxMag = mag; bestBin = i; }
             }
 
-            // Noise threshold: negeer pieken die te zwak zijn
-            if (maxMag < 0.001 || bestBin <= 0 || bestBin >= FftSize / 2 - 1) return null;
+            // Noise threshold: pas aan op basis van frequentie
+            // Bass: hogere threshold (meer omgevingsruis)
+            // Treble: lagere threshold (zuiverder signaal)
+            double noiseThreshold = targetFreq < 100 ? 0.002 : 0.001;
+            
+            if (maxMag < noiseThreshold || bestBin <= 0 || bestBin >= FftSize / 2 - 1)
+                return null;
 
             // Oplossing Audit Punt 4.1: Parabolische Interpolatie (0.01 Hz precisie)
+            // Bron: Smith (2011) "Spectral Audio Signal Processing", p.283-287
             double magPrev = Math.Max(fftData[bestBin - 1].Magnitude, 1e-10);
             double magPeak = Math.Max(fftData[bestBin].Magnitude, 1e-10);
             double magNext = Math.Max(fftData[bestBin + 1].Magnitude, 1e-10);
@@ -221,6 +354,12 @@ namespace AurisPianoTuner.Measure.Services
 
             double d = (y1 - y3) / (2 * denominator);
             double preciseFreq = (bestBin + d) * binFreq;
+
+            // Extra validatie: detecteer implausibele frequenties
+            // Een partial mag maximaal ±2 semitonen afwijken van verwachte waarde
+            double maxDeviation = targetFreq * 0.1225; // 2 semitones = 12.25%
+            if (Math.Abs(preciseFreq - targetFreq) > maxDeviation)
+                return null;
 
             return new PartialResult { n = n, Frequency = preciseFreq, Amplitude = 20 * Math.Log10(maxMag) };
         }

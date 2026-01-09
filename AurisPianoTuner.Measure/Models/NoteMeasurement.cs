@@ -21,6 +21,22 @@ namespace AurisPianoTuner.Measure.Models
         /// Formula: TrueFundamental = MeasuredPartial.Frequency / MeasuredPartialNumber
         /// </summary>
         public double CalculatedFundamental { get; set; }
+        
+        /// <summary>
+        /// Inharmoniciteitscoëfficiënt (B) berekend uit de gedetecteerde partials.
+        /// Wetenschappelijke basis: Fletcher & Rossing (1998), "The Physics of Musical Instruments", p.362-364
+        /// 
+        /// Formule: f_n = n·f?·?(1 + B·n²)
+        /// 
+        /// Typische waarden:
+        /// - Concert Grand (280cm): B ? 0.00003 - 0.0002
+        /// - Baby Grand (150-170cm): B ? 0.0001 - 0.0004
+        /// - Console (110-120cm): B ? 0.0003 - 0.0008
+        /// - Spinet (<110cm): B ? 0.0005 - 0.002
+        /// 
+        /// Opmerking: B varieert sterk per register (hoger in bass door kortere/zwaardere snaren).
+        /// </summary>
+        public double InharmonicityCoefficient { get; set; } = 0.0;
     }
 
     public class PartialResult

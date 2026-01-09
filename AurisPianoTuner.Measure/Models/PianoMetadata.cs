@@ -55,10 +55,10 @@ namespace AurisPianoTuner.Measure.Models
         public int ScaleBreakMidiNote { get; set; } = 41; // Default: F2
 
         /// <summary>
-        /// Optional: Manufacturer and model for documentation purposes.
+        /// Optional: Date and time when measurement was taken.
+        /// Useful for tracking drift over time.
         /// </summary>
-        public string Manufacturer { get; set; } = string.Empty;
-        public string Model { get; set; } = string.Empty;
+        public DateTime? MeasurementDateTime { get; set; }
 
         /// <summary>
         /// Optional: Serial number for tracking individual instruments.
@@ -74,31 +74,6 @@ namespace AurisPianoTuner.Measure.Models
         /// Free-form notes about the instrument condition, environment, etc.
         /// </summary>
         public string Notes { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Optional: Ambient temperature during measurement (°C).
-        /// Scientific basis: Fletcher & Rossing (1998) - Temperature affects string tension.
-        /// Effect: ?f/f ? -0.0001 per °C (For A4: +10°C ? -1.7 cents)
-        /// 
-        /// Use case: Explains seasonal pitch drift, validates measurement consistency.
-        /// </summary>
-        public double? MeasurementTemperatureCelsius { get; set; }
-
-        /// <summary>
-        /// Optional: Relative humidity during measurement (%).
-        /// Scientific basis: Askenfelt & Jansson (1990) - Humidity affects soundboard.
-        /// Effect: High RH ? soundboard swells ? strings tighten ? +3-8 cents
-        ///         Low RH ? soundboard shrinks ? strings loosen ? -3-8 cents
-        /// 
-        /// Use case: Critical for longitudinal studies (winter vs summer drift).
-        /// </summary>
-        public double? MeasurementHumidityPercent { get; set; }
-
-        /// <summary>
-        /// Optional: Date and time when measurement was taken.
-        /// Useful for tracking drift over time and correlating with environmental conditions.
-        /// </summary>
-        public DateTime? MeasurementDateTime { get; set; }
     }
 
     /// <summary>

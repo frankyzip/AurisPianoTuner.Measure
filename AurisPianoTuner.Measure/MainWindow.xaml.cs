@@ -25,12 +25,20 @@ namespace AurisPianoTuner.Measure
         private string? _currentProjectFile = null;
         private PianoMetadata _pianoMetadata = new();
 
+        // NIEUW: logger reference (optioneel via concrete analyzer)
+        private TestLoggerService? _testLogger = null;
+
         public MainWindow()
         {
             InitializeComponent();
             _audioService = new AsioAudioService();
-            _fftAnalyzer = new FftAnalyzerService();
+            var analyzer = new FftAnalyzerService(); // explicit type to attach logger
+            _fftAnalyzer = analyzer;
             _storageService = new MeasurementStorageService();
+
+            // Koppel de logger
+            _testLogger = new TestLoggerService();
+            analyzer.TestLogger = _testLogger;
             
             // Vul de combobox met beschikbare drivers
             ComboAsioDrivers.ItemsSource = _audioService.GetAsioDrivers();
@@ -52,6 +60,13 @@ namespace AurisPianoTuner.Measure
             BtnLoad.Click += BtnLoad_Click;
             BtnAnalyzeDrift.Click += BtnAnalyzeDrift_Click;
             BtnAnalyzeReport.Click += BtnAnalyzeReport_Click;
+            BtnAudioSettings.Click += BtnAudioSettings_Click;
+        }
+
+        private void BtnAudioSettings_Click(object sender, RoutedEventArgs e)
+        {
+            // Open ASIO control panel (Steinberg, 1997)
+            _audioService.ShowControlPanel();
         }
 
         private void InitializePianoMetadataControls()
@@ -84,15 +99,6 @@ namespace AurisPianoTuner.Measure
             ComboScaleBreak.DisplayMemberPath = "Display";
             ComboScaleBreak.SelectedValuePath = "Value";
             ComboScaleBreak.SelectedValue = 41; // Default: F2
-
-            // Subscribe to changes
-            ComboPianoType.SelectionChanged += (s, e) => UpdatePianoMetadataFromUI();
-            TxtDimension.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
-            ComboScaleBreak.SelectionChanged += (s, e) => UpdatePianoMetadataFromUI();
-            TxtManufacturer.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
-            TxtModel.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
-            TxtTemperature.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
-            TxtHumidity.TextChanged += (s, e) => UpdatePianoMetadataFromUI();
         }
 
         private void UpdatePianoMetadataFromUI()
@@ -107,28 +113,6 @@ namespace AurisPianoTuner.Measure
             if (ComboScaleBreak.SelectedValue is int scaleBreak)
             {
                 _pianoMetadata.ScaleBreakMidiNote = scaleBreak;
-            }
-
-            _pianoMetadata.Manufacturer = TxtManufacturer.Text;
-            _pianoMetadata.Model = TxtModel.Text;
-
-            // Optional environmental data
-            if (double.TryParse(TxtTemperature.Text, out double temp))
-            {
-                _pianoMetadata.MeasurementTemperatureCelsius = temp;
-            }
-            else
-            {
-                _pianoMetadata.MeasurementTemperatureCelsius = null;
-            }
-
-            if (double.TryParse(TxtHumidity.Text, out double humidity))
-            {
-                _pianoMetadata.MeasurementHumidityPercent = humidity;
-            }
-            else
-            {
-                _pianoMetadata.MeasurementHumidityPercent = null;
             }
 
             // Set measurement timestamp
@@ -158,12 +142,7 @@ namespace AurisPianoTuner.Measure
             ComboPianoType.SelectedValue = metadata.Type;
             TxtDimension.Text = metadata.DimensionCm > 0 ? metadata.DimensionCm.ToString() : "";
             ComboScaleBreak.SelectedValue = metadata.ScaleBreakMidiNote;
-            TxtManufacturer.Text = metadata.Manufacturer ?? "";
-            TxtModel.Text = metadata.Model ?? "";
-
-            // Load environmental data if available
-            TxtTemperature.Text = metadata.MeasurementTemperatureCelsius?.ToString("F1") ?? "";
-            TxtHumidity.Text = metadata.MeasurementHumidityPercent?.ToString("F0") ?? "";
+            
             UpdateMeasurementDateLabel();
 
             // Update FFT analyzer with loaded metadata
@@ -179,6 +158,8 @@ namespace AurisPianoTuner.Measure
             LblNoteName.Text = noteName;
             LblTargetHz.Text = $"{freq:F2} Hz";
             LblMeasuredHz.Text = "--.--- Hz";
+            LblCentDeviation.Text = "±0.0 cent";
+            LblCentDeviation.Foreground = System.Windows.Media.Brushes.Gray;
             QualityIndicator.Fill = System.Windows.Media.Brushes.Gray;
 
             // Check of deze noot al gemeten is
@@ -198,10 +179,22 @@ namespace AurisPianoTuner.Measure
 
         private void DisplayStoredMeasurement(NoteMeasurement measurement)
         {
-            // Toon berekende fundamentele (afgeleid van gemeten partial)
+            // Toon berekante fundamentele (afgeleid van gemeten partial)
             if (measurement.CalculatedFundamental > 0)
             {
                 LblMeasuredHz.Text = $"{measurement.CalculatedFundamental:F2} Hz";
+                
+                // Bereken cent afwijking: cents = 1200 * log2(measured / target)
+                double cents = 1200 * Math.Log2(measurement.CalculatedFundamental / measurement.TargetFrequency);
+                LblCentDeviation.Text = $"{cents:+0.0;-0.0} cent";
+                
+                // Kleur gebaseerd op cent afwijking
+                LblCentDeviation.Foreground = Math.Abs(cents) switch
+                {
+                    < 5 => System.Windows.Media.Brushes.DarkGreen,
+                    < 10 => System.Windows.Media.Brushes.Orange,
+                    _ => System.Windows.Media.Brushes.Red
+                };
             }
             else
             {
@@ -209,6 +202,16 @@ namespace AurisPianoTuner.Measure
                 if (fundamental != null)
                 {
                     LblMeasuredHz.Text = $"{fundamental.Frequency:F2} Hz";
+                    
+                    double cents = 1200 * Math.Log2(fundamental.Frequency / measurement.TargetFrequency);
+                    LblCentDeviation.Text = $"{cents:+0.0;-0.0} cent";
+                    
+                    LblCentDeviation.Foreground = Math.Abs(cents) switch
+                    {
+                        < 5 => System.Windows.Media.Brushes.DarkGreen,
+                        < 10 => System.Windows.Media.Brushes.Orange,
+                        _ => System.Windows.Media.Brushes.Red
+                    };
                 }
             }
 
@@ -253,7 +256,7 @@ namespace AurisPianoTuner.Measure
             }
         }
 
-        private void BtnSave_Click(object sender, RoutedEventArgs e)
+        private async void BtnSave_Click(object sender, RoutedEventArgs e)
         {
             if (_storedMeasurements.Count == 0)
             {
@@ -266,7 +269,7 @@ namespace AurisPianoTuner.Measure
                 Filter = "JSON Bestanden (*.json)|*.json|Alle Bestanden (*.*)|*.*",
                 DefaultExt = "json",
                 FileName = string.IsNullOrEmpty(TxtProjectName.Text) 
-                    ? $"Piano_Measurement_{DateTime.Now:yyyyMMdd_HHmmss}.json"
+                    ? $"Piano_Measurement_{DateTime.Now:yyyyMMdd_HHmms}.json"
                     : $"{TxtProjectName.Text}_{DateTime.Now:yyyyMMdd_HHmms}.json"
             };
 
@@ -275,10 +278,16 @@ namespace AurisPianoTuner.Measure
                 try
                 {
                     UpdatePianoMetadataFromUI();
-                    _storageService.SaveMeasurements(saveDialog.FileName, _storedMeasurements, _pianoMetadata);
+                    await _storageService.SaveMeasurementsAsync(saveDialog.FileName, _storedMeasurements, _pianoMetadata);
                     _currentProjectFile = saveDialog.FileName;
                     MessageBox.Show($"Metingen opgeslagen!\n{_storedMeasurements.Count} noten bewaard.", 
                         "Opslaan Gelukt", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                    // Sla ook het debug logbestand asynchroon op
+                    if (_testLogger != null)
+                    {
+                        await _testLogger.SaveSessionLogAsync(TxtProjectName.Text ?? "UnknownPiano");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -287,7 +296,7 @@ namespace AurisPianoTuner.Measure
             }
         }
 
-        private void BtnLoad_Click(object sender, RoutedEventArgs e)
+        private async void BtnLoad_Click(object sender, RoutedEventArgs e)
         {
             var openDialog = new OpenFileDialog
             {
@@ -299,9 +308,13 @@ namespace AurisPianoTuner.Measure
             {
                 try
                 {
-                    var (loadedMeasurements, pianoMetadata) = _storageService.LoadMeasurements(openDialog.FileName);
+                    var (loadedMeasurements, pianoMetadata) = await _storageService.LoadMeasurementsAsync(openDialog.FileName);
                     _storedMeasurements = loadedMeasurements;
                     _currentProjectFile = openDialog.FileName;
+
+                    // Vul projectnaam in op basis van bestandsnaam
+                    string fileName = System.IO.Path.GetFileNameWithoutExtension(openDialog.FileName);
+                    TxtProjectName.Text = fileName;
 
                     if (pianoMetadata != null)
                     {
@@ -510,14 +523,25 @@ namespace AurisPianoTuner.Measure
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                // Toon berekende fundamentele (afgeleid van optimale partial voor dit register)
                 if (measurement.CalculatedFundamental > 0)
                 {
                     LblMeasuredHz.Text = $"{measurement.CalculatedFundamental:F2} Hz";
+                    
+                    double cents = 1200 * Math.Log2(measurement.CalculatedFundamental / measurement.TargetFrequency);
+                    LblCentDeviation.Text = $"{cents:+0.0;-0.0} cent";
+                    
+                    LblCentDeviation.Foreground = Math.Abs(cents) switch
+                    {
+                        < 5 => System.Windows.Media.Brushes.DarkGreen,
+                        < 10 => System.Windows.Media.Brushes.Orange,
+                        _ => System.Windows.Media.Brushes.Red
+                    };
                 }
                 else
                 {
                     LblMeasuredHz.Text = "--- Hz";
+                    LblCentDeviation.Text = "±0.0 cent";
+                    LblCentDeviation.Foreground = System.Windows.Media.Brushes.Gray;
                 }
 
                 QualityIndicator.Fill = measurement.Quality switch
@@ -531,7 +555,6 @@ namespace AurisPianoTuner.Measure
                 Title = $"AurisMeasure - {measurement.NoteName} ({_measurementCount}/{MaxMeasurementsPerNote} samples) [n={measurement.MeasuredPartialNumber}]";
                 UpdateSpectrumDisplay(measurement);
 
-                // Automatisch stoppen na X metingen
                 if (_measurementCount >= MaxMeasurementsPerNote)
                 {
                     FinalizeMeasurement();
@@ -543,20 +566,13 @@ namespace AurisPianoTuner.Measure
         {
             if (_currentMeasurementBuffer.Count == 0) return;
 
-            // Bereken gemiddelde meting
             var averaged = AverageMeasurements(_currentMeasurementBuffer);
-            
-            // Sla op in geheugen
             _storedMeasurements[averaged.MidiIndex] = averaged;
-
-            // Update toets kleur op basis van kwaliteit
             PianoKeyboard.SetKeyQuality(averaged.MidiIndex, averaged.Quality);
 
-            // Stop automatisch
             _isMeasuring = false;
             BtnStart.Content = "START MEASUREMENT";
             BtnStart.Background = System.Windows.Media.Brushes.Green;
-
             Title = $"AurisMeasure - {averaged.NoteName} COMPLETED";
         }
 
@@ -571,7 +587,6 @@ namespace AurisPianoTuner.Measure
                 MeasuredPartialNumber = first.MeasuredPartialNumber
             };
 
-            // Voor elke partial (n=1 tot 16), bereken gemiddelde
             for (int n = 1; n <= 16; n++)
             {
                 var partials = measurements
@@ -590,7 +605,6 @@ namespace AurisPianoTuner.Measure
                 }
             }
 
-            // Bereken gemiddelde fundamentele uit gemeten partials
             var calculatedFundamentals = measurements
                 .Where(m => m.CalculatedFundamental > 0)
                 .Select(m => m.CalculatedFundamental)
@@ -601,7 +615,6 @@ namespace AurisPianoTuner.Measure
                 result.CalculatedFundamental = calculatedFundamentals.Average();
             }
 
-            // Bepaal kwaliteit op basis van gemiddelde
             result.Quality = result.DetectedPartials.Count > 5 ? "Groen" :
                            result.DetectedPartials.Count > 2 ? "Oranje" : "Rood";
 
@@ -610,40 +623,115 @@ namespace AurisPianoTuner.Measure
 
         private void UpdateSpectrumDisplay(NoteMeasurement measurement)
         {
-            if (measurement.DetectedPartials.Count == 0)
-            {
-                return;
-            }
+            if (measurement.DetectedPartials.Count == 0) return;
 
-            var spectrumText = $"Target: {measurement.NoteName} ({measurement.TargetFrequency:F2} Hz)\n";
-            spectrumText += $"Quality: {measurement.Quality}\n";
-            spectrumText += $"Progress: {_measurementCount}/{MaxMeasurementsPerNote}\n";
-            spectrumText += $"Measured using: Partial n={measurement.MeasuredPartialNumber}\n";
+            var spectrumText = $"🎹 Target: {measurement.NoteName} ({measurement.TargetFrequency:F2} Hz)\n";
+            spectrumText += $"📊 Quality: {measurement.Quality} | Progress: {_measurementCount}/{MaxMeasurementsPerNote}\n";
+            spectrumText += $"🔬 Measured using: Partial n={measurement.MeasuredPartialNumber} ★\n";
             
             if (measurement.CalculatedFundamental > 0)
             {
                 double deviation = measurement.CalculatedFundamental - measurement.TargetFrequency;
                 double cents = 1200 * Math.Log2(measurement.CalculatedFundamental / measurement.TargetFrequency);
-                spectrumText += $"Calculated Fundamental: {measurement.CalculatedFundamental:F2} Hz (Δ {deviation:+0.00;-0.00} Hz, {cents:+0.0;-0.0} cent)\n";
+                spectrumText += $"⚡ Calculated Fundamental: {measurement.CalculatedFundamental:F2} Hz\n";
+                spectrumText += $"   Δ {deviation:+0.00;-0.00} Hz | {cents:+0.0;-0.0} cent\n";
             }
+
+            if (measurement.InharmonicityCoefficient > 0)
+            {
+                string pianoClass = GetPianoClassFromInharmonicity(measurement.InharmonicityCoefficient);
+                spectrumText += $"🎼 Inharmonicity B: {measurement.InharmonicityCoefficient:E3} ({pianoClass})\n";
+            }
+
+            string register = GetRegisterAnalysis(measurement.MidiIndex, measurement.MeasuredPartialNumber);
+            spectrumText += $"🎯 Register: {register}\n";
             
-            spectrumText += "\nDetected Partials:\n";
+            spectrumText += "\n📈 Detected Partials vs Theory:\n";
+            spectrumText += "n  | Measured    | Theoretical | Δ Hz    | Amplitude | Quality\n";
+            spectrumText += "---|-------------|-------------|---------|-----------|--------\n";
             
             foreach (var partial in measurement.DetectedPartials.Take(8))
             {
-                double deviation = partial.Frequency - (measurement.TargetFrequency * partial.n);
-                string marker = partial.n == measurement.MeasuredPartialNumber ? " ★" : "";
-                spectrumText += $"n={partial.n}: {partial.Frequency:F2} Hz (Δ {deviation:+0.00;-0.00} Hz) | {partial.Amplitude:F1} dB{marker}\n";
+                double theoreticalFreq = CalculateTheoreticalPartialFrequency(
+                    measurement.TargetFrequency, 
+                    partial.n, 
+                    measurement.InharmonicityCoefficient);
+                
+                double deviation = partial.Frequency - theoreticalFreq;
+                string marker = partial.n == measurement.MeasuredPartialNumber ? "★" : " ";
+                string quality = GetPartialQuality(partial.Amplitude, deviation);
+                
+                spectrumText += $"{partial.n,2}{marker} | {partial.Frequency,9:F2} Hz | {theoreticalFreq,9:F2} Hz | {deviation,+6:F2} | {partial.Amplitude,7:F1} dB | {quality}\n";
             }
+
+            string confidence = GetMeasurementConfidence(measurement);
+            spectrumText += $"\n🔍 Measurement Confidence: {confidence}\n";
 
             var spectrumBorder = this.FindName("SpectrumBorder") as System.Windows.Controls.Border;
             if (spectrumBorder?.Child is System.Windows.Controls.TextBlock tb)
             {
                 tb.Text = spectrumText;
                 tb.FontSize = 14;
+                tb.FontFamily = new System.Windows.Media.FontFamily("Consolas");
                 tb.TextAlignment = System.Windows.TextAlignment.Left;
                 tb.Margin = new Thickness(10);
+                
+                tb.Foreground = measurement.Quality switch
+                {
+                    "Groen" => System.Windows.Media.Brushes.LimeGreen,
+                    "Oranje" => System.Windows.Media.Brushes.Orange,
+                    "Rood" => System.Windows.Media.Brushes.LightCoral,
+                    _ => System.Windows.Media.Brushes.LightGray
+                };
             }
+        }
+
+        private double CalculateTheoreticalPartialFrequency(double fundamental, int n, double inharmonicity)
+        {
+            if (inharmonicity <= 0) return fundamental * n;
+            return n * fundamental * Math.Sqrt(1 + inharmonicity * n * n);
+        }
+
+        private string GetPianoClassFromInharmonicity(double B)
+        {
+            return B switch
+            {
+                < 0.0002 => "Concert Grand",
+                < 0.0004 => "Baby Grand",
+                < 0.0008 => "Console",
+                _ => "Spinet/Small"
+            };
+        }
+
+        private string GetRegisterAnalysis(int midiIndex, int measuredPartial)
+        {
+            return midiIndex switch
+            {
+                <= 35 => $"Deep Bass (optimal n=6-8, using n={measuredPartial})",
+                <= 47 => $"Bass (optimal n=3-4, using n={measuredPartial})",
+                <= 60 => $"Tenor (optimal n=2, using n={measuredPartial})",
+                <= 72 => $"Mid-High (optimal n=1, using n={measuredPartial})",
+                _ => $"Treble (optimal n=1, using n={measuredPartial})"
+            };
+        }
+
+        private string GetPartialQuality(double amplitude, double frequencyDeviation)
+        {
+            if (amplitude < -40) return "Weak";
+            if (Math.Abs(frequencyDeviation) > 5.0) return "Off-pitch";
+            if (amplitude > -20) return "Strong";
+            return "Good";
+        }
+
+        private string GetMeasurementConfidence(NoteMeasurement measurement)
+        {
+            int strongPartials = measurement.DetectedPartials.Count(p => p.Amplitude > -30);
+            int totalPartials = measurement.DetectedPartials.Count;
+            
+            if (strongPartials >= 5 && totalPartials >= 8) return "Excellent (>5 strong partials)";
+            if (strongPartials >= 3 && totalPartials >= 5) return "Good (3-5 strong partials)";
+            if (strongPartials >= 1 && totalPartials >= 3) return "Fair (1-3 strong partials)";
+            return "Poor (<3 usable partials)";
         }
 
         protected override void OnClosed(EventArgs e)
@@ -655,7 +743,6 @@ namespace AurisPianoTuner.Measure
 
         private void BtnAnalyzeReport_Click(object sender, RoutedEventArgs e)
         {
-            // Check if we have measurements
             if (_storedMeasurements.Count == 0)
             {
                 MessageBox.Show(
@@ -669,7 +756,6 @@ namespace AurisPianoTuner.Measure
 
             try
             {
-                // Open analysis window
                 var analysisWindow = new Views.MeasurementAnalysisWindow(
                     _storedMeasurements,
                     _pianoMetadata

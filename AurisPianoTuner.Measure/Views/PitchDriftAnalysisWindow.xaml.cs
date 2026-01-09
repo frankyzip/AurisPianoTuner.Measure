@@ -60,28 +60,8 @@ namespace AurisPianoTuner.Measure.Views
                 TxtOldDate.Text = _oldMetadata.MeasurementDateTime.Value.ToString("yyyy-MM-dd HH:mm");
             }
 
-            if (_oldMetadata?.MeasurementTemperatureCelsius.HasValue == true)
-            {
-                TxtOldTemp.Text = $"{_oldMetadata.MeasurementTemperatureCelsius.Value:F1} °C";
-            }
-
-            if (_oldMetadata?.MeasurementHumidityPercent.HasValue == true)
-            {
-                TxtOldHumidity.Text = $"{_oldMetadata.MeasurementHumidityPercent.Value:F0} %";
-            }
-
             // New measurement info
             TxtNewDate.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
-
-            if (_newMetadata?.MeasurementTemperatureCelsius.HasValue == true)
-            {
-                TxtNewTemp.Text = $"{_newMetadata.MeasurementTemperatureCelsius.Value:F1} °C";
-            }
-
-            if (_newMetadata?.MeasurementHumidityPercent.HasValue == true)
-            {
-                TxtNewHumidity.Text = $"{_newMetadata.MeasurementHumidityPercent.Value:F0} %";
-            }
 
             // Time elapsed
             if (_oldMetadata?.MeasurementDateTime.HasValue == true)
@@ -119,10 +99,10 @@ namespace AurisPianoTuner.Measure.Views
 
                 double expectedDrift = _calculator.EstimateExpectedDrift(
                     months,
-                    _oldMetadata?.MeasurementTemperatureCelsius,
-                    _newMetadata?.MeasurementTemperatureCelsius,
-                    _oldMetadata?.MeasurementHumidityPercent,
-                    _newMetadata?.MeasurementHumidityPercent
+                    null, // Temperature not tracked
+                    null,
+                    null, // Humidity not tracked
+                    null
                 );
 
                 TxtExpectedDrift.Text = $"{expectedDrift:+0.0;-0.0} cents (theoretical)";

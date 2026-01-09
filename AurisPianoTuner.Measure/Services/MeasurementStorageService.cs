@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using AurisPianoTuner.Measure.Models;
 
 namespace AurisPianoTuner.Measure.Services
@@ -22,7 +23,7 @@ namespace AurisPianoTuner.Measure.Services
             };
         }
 
-        public void SaveMeasurements(string filePath, Dictionary<int, NoteMeasurement> measurements, PianoMetadata? pianoMetadata = null)
+        public async Task SaveMeasurementsAsync(string filePath, Dictionary<int, NoteMeasurement> measurements, PianoMetadata? pianoMetadata = null)
         {
             try
             {
@@ -38,7 +39,7 @@ namespace AurisPianoTuner.Measure.Services
                 };
 
                 string json = JsonSerializer.Serialize(data, _jsonOptions);
-                File.WriteAllText(filePath, json);
+                await File.WriteAllTextAsync(filePath, json).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -46,7 +47,7 @@ namespace AurisPianoTuner.Measure.Services
             }
         }
 
-        public (Dictionary<int, NoteMeasurement> measurements, PianoMetadata? metadata) LoadMeasurements(string filePath)
+        public async Task<(Dictionary<int, NoteMeasurement> measurements, PianoMetadata? metadata)> LoadMeasurementsAsync(string filePath)
         {
             try
             {
@@ -55,7 +56,7 @@ namespace AurisPianoTuner.Measure.Services
                     throw new FileNotFoundException($"Bestand niet gevonden: {filePath}");
                 }
 
-                string json = File.ReadAllText(filePath);
+                string json = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
                 var data = JsonSerializer.Deserialize<MeasurementFileData>(json, _jsonOptions);
 
                 if (data == null || data.Measurements == null)

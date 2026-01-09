@@ -24,7 +24,7 @@ namespace AurisPianoTuner.Measure.Views
             // Update subtitle
             if (metadata != null)
             {
-                TxtSubtitle.Text = $"{metadata.Manufacturer} {metadata.Model} - {metadata.Type}";
+                TxtSubtitle.Text = $"{metadata.Type} - {metadata.DimensionCm}cm";
             }
 
             // Wire up events
@@ -48,27 +48,16 @@ namespace AurisPianoTuner.Measure.Views
             sb.AppendLine("-----------------------------------------------------------");
             if (metadata != null)
             {
-                sb.AppendLine($"Manufacturer:     {metadata.Manufacturer ?? "Unknown"}");
-                sb.AppendLine($"Model:            {metadata.Model ?? "Unknown"}");
                 sb.AppendLine($"Type:             {metadata.Type}");
                 sb.AppendLine($"Dimension:        {metadata.DimensionCm} cm");
                 sb.AppendLine($"Scale Break:      {GetNoteName(metadata.ScaleBreakMidiNote)} (MIDI {metadata.ScaleBreakMidiNote})");
                 sb.AppendLine($"Serial Number:    {metadata.SerialNumber ?? "N/A"}");
-                sb.AppendLine();
-
-                // Environmental Conditions
-                if (metadata.MeasurementTemperatureCelsius.HasValue || metadata.MeasurementHumidityPercent.HasValue)
+                
+                if (metadata.MeasurementDateTime.HasValue)
                 {
-                    sb.AppendLine("MEASUREMENT CONDITIONS");
-                    sb.AppendLine("-----------------------------------------------------------");
-                    if (metadata.MeasurementTemperatureCelsius.HasValue)
-                        sb.AppendLine($"Temperature:      {metadata.MeasurementTemperatureCelsius.Value:F1} °C");
-                    if (metadata.MeasurementHumidityPercent.HasValue)
-                        sb.AppendLine($"Humidity:         {metadata.MeasurementHumidityPercent.Value:F0} %");
-                    if (metadata.MeasurementDateTime.HasValue)
-                        sb.AppendLine($"Date/Time:        {metadata.MeasurementDateTime.Value:yyyy-MM-dd HH:mm:ss}");
-                    sb.AppendLine();
+                    sb.AppendLine($"Date/Time:        {metadata.MeasurementDateTime.Value:yyyy-MM-dd HH:mm:ss}");
                 }
+                sb.AppendLine();
             }
 
             // Measurement Statistics
