@@ -1,0 +1,71 @@
+﻿<Window x:Class="AurisPianoTuner.Measure.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:AurisPianoTuner.Measure.Views"
+        Title="AurisMeasure - Professional Piano Measurement" 
+        Height="700" Width="1100" WindowStartupLocation="CenterScreen">
+
+    <Grid Background="#F0F0F0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Metadata Bar -->
+            <RowDefinition Height="*"/>
+            <!-- Note Card & Spectrum -->
+            <RowDefinition Height="130"/>
+            <!-- Full Width Keyboard (korter gemaakt) -->
+        </Grid.RowDefinitions>
+
+        <!-- 1. Metadata Bar -->
+        <Border Grid.Row="0" Background="#333" Padding="10">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Project:" Foreground="White" VerticalAlignment="Center" Margin="10,0"/>
+                <TextBox Width="150" x:Name="TxtProjectName"/>
+                <!-- ASIO driver selection -->
+                <TextBlock Text="ASIO Driver:" Foreground="White" VerticalAlignment="Center" Margin="20,0,5,0"/>
+                <ComboBox x:Name="ComboAsioDrivers" Width="200" SelectionChanged="ComboAsioDrivers_SelectionChanged"/>
+                <!-- Voeg hier de overige metadata velden toe -->
+                <Button Content="Audio Settings" Margin="20,0" Padding="10,2"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 2. Midden Sectie -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*"/>
+                <!-- Note Card -->
+                <ColumnDefinition Width="2*"/>
+                <!-- Spectrum Graph -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Note Card Placeholder -->
+            <Border Grid.Column="0" Margin="20" Background="White" CornerRadius="10" BorderBrush="Gray" BorderThickness="1">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock x:Name="LblNoteName" Text="A4" FontSize="72" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="LblTargetHz" Text="440.00 Hz" FontSize="18" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="LblMeasuredHz" Text="--.--- Hz" FontSize="24" Foreground="DarkBlue" HorizontalAlignment="Center"/>
+                    <Ellipse x:Name="QualityIndicator" Width="40" Height="40" Fill="Gray" Margin="10"/>
+
+                    <!-- Input level visualization for testing 96kHz input -->
+                    <TextBlock Text="Input Level" FontSize="12" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                    <ProgressBar x:Name="VolumeBar" Minimum="0" Maximum="100" Height="20" Width="150" Foreground="Lime"/>
+                    <TextBlock x:Name="LblDbStatus" Text="-80 dB" FontSize="10" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Spectrum Placeholder -->
+            <Border Grid.Column="1" Margin="10" Background="Black" CornerRadius="5">
+                <TextBlock Text="Spectrum Visualizer" Foreground="Lime" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+        </Grid>
+
+        <!-- 3. Full Width Keyboard (custom control) -->
+        <Border Grid.Row="2" Background="White" BorderBrush="Black" BorderThickness="0,1,0,0" Padding="5">
+            <views:PianoKeyboard x:Name="PianoKeyboard" Height="120"/>
+        </Border>
+
+        <!-- Start/Stop Knop zwevend -->
+        <StackPanel Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="30">
+            <Button x:Name="BtnStart" Content="START RECORDING" Background="Green" Foreground="White" Width="150" Height="50" FontWeight="Bold"/>
+        </StackPanel>
+    </Grid>
+</Window>
