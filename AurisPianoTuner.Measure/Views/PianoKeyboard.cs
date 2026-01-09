@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -15,6 +17,13 @@ namespace AurisPianoTuner.Measure.Views
         private const double WhiteKeyHeight = 120;
         private const double BlackKeyHeight = 75;
         private const double BlackKeyWidthRatio = 0.6; // Zwarte toets is 60% van witte
+
+        private int _selectedMidiIndex = -1;
+        private Rectangle? _selectedKeyRectangle = null;
+        private Brush _selectedKeyOriginalBrush = Brushes.White;
+
+        // Dictionary om toetsen te vinden per MIDI index
+        private Dictionary<int, Rectangle> _keyRectangles = new();
 
         public PianoKeyboard()
         {
@@ -38,6 +47,7 @@ namespace AurisPianoTuner.Measure.Views
         private void GenerateKeys()
         {
             this.Children.Clear();
+            _keyRectangles.Clear();
 
             if (this.ActualWidth <= 0) return;
 
@@ -46,9 +56,6 @@ namespace AurisPianoTuner.Measure.Views
             double blackKeyWidth = _whiteKeyWidth * BlackKeyWidthRatio;
 
             int whiteKeyIndex = 0;
-            
-            // Pattern van zwarte toetsen: C# D# _ F# G# A# _ (repeat)
-            bool[] blackKeyPattern = { true, true, false, true, true, true, false }; // C# D# - F# G# A# -
 
             // Eerst alle witte toetsen
             for (int midi = 21; midi <= 108; midi++)
@@ -90,26 +97,14 @@ namespace AurisPianoTuner.Measure.Views
                 Cursor = System.Windows.Input.Cursors.Hand
             };
 
+            _keyRectangles[midiIndex] = rect;
+
             rect.MouseDown += (s, e) =>
             {
                 if (s is Rectangle r && r.Tag is int midi)
                 {
-                    KeyPressed?.Invoke(this, midi);
-                    // Visual feedback
-                    r.Fill = Brushes.LightGray;
+                    SelectKey(r, midi, Brushes.White);
                 }
-            };
-
-            rect.MouseUp += (s, e) =>
-            {
-                if (s is Rectangle r)
-                    r.Fill = Brushes.White;
-            };
-
-            rect.MouseLeave += (s, e) =>
-            {
-                if (s is Rectangle r)
-                    r.Fill = Brushes.White;
             };
 
             Canvas.SetLeft(rect, x);
@@ -147,25 +142,14 @@ namespace AurisPianoTuner.Measure.Views
                 Cursor = System.Windows.Input.Cursors.Hand
             };
 
+            _keyRectangles[midiIndex] = rect;
+
             rect.MouseDown += (s, e) =>
             {
                 if (s is Rectangle r && r.Tag is int midi)
                 {
-                    KeyPressed?.Invoke(this, midi);
-                    r.Fill = Brushes.DarkGray;
+                    SelectKey(r, midi, Brushes.Black);
                 }
-            };
-
-            rect.MouseUp += (s, e) =>
-            {
-                if (s is Rectangle r)
-                    r.Fill = Brushes.Black;
-            };
-
-            rect.MouseLeave += (s, e) =>
-            {
-                if (s is Rectangle r)
-                    r.Fill = Brushes.Black;
             };
 
             Canvas.SetLeft(rect, x - (width / 2));
@@ -173,6 +157,51 @@ namespace AurisPianoTuner.Measure.Views
             Canvas.SetZIndex(rect, 2); // Zwarte toetsen boven witte
 
             this.Children.Add(rect);
+        }
+
+        private void SelectKey(Rectangle keyRect, int midiIndex, Brush originalBrush)
+        {
+            // Reset vorige selectie
+            if (_selectedKeyRectangle != null)
+            {
+                _selectedKeyRectangle.Fill = _selectedKeyOriginalBrush;
+            }
+
+            // Stel nieuwe selectie in
+            _selectedMidiIndex = midiIndex;
+            _selectedKeyRectangle = keyRect;
+            _selectedKeyOriginalBrush = originalBrush;
+
+            // Maak geselecteerde toets blauw
+            keyRect.Fill = Brushes.CornflowerBlue;
+
+            // Fire event
+            KeyPressed?.Invoke(this, midiIndex);
+        }
+
+        public void SetKeyQuality(int midiIndex, string quality)
+        {
+            if (!_keyRectangles.TryGetValue(midiIndex, out var keyRect))
+                return;
+
+            Brush qualityBrush = quality switch
+            {
+                "Groen" => Brushes.LimeGreen,
+                "Oranje" => Brushes.Orange,
+                "Rood" => Brushes.IndianRed,
+                _ => IsBlackKey(midiIndex) ? Brushes.Black : Brushes.White
+            };
+
+            // Update de originele kleur zodat deze behouden blijft bij deselectie
+            if (keyRect == _selectedKeyRectangle)
+            {
+                _selectedKeyOriginalBrush = qualityBrush;
+                // Laat blauw voor nu (actieve selectie)
+            }
+            else
+            {
+                keyRect.Fill = qualityBrush;
+            }
         }
 
         private bool IsBlackKey(int midiIndex)

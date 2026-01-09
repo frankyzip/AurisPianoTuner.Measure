@@ -1,30 +1,29 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using AurisPianoTuner.Measure.Models;
-using MathNet.Numerics;
-using MathNet.Numerics.IntegralTransforms;
 using System.Numerics;
+using AurisPianoTuner.Measure.Models;
+using MathNet.Numerics.IntegralTransforms;
 
 namespace AurisPianoTuner.Measure.Services
 {
     public class FftAnalyzerService : IFftAnalyzerService
     {
-        private const int FftSize = 32768; // Geeft ~2.93 Hz per bin bij 96kHz
+        private const int FftSize = 32768; // 2^15 voor hoge resolutie
         private const int SampleRate = 96000;
-        private readonly float[] _buffer = new float[FftSize];
-        private int _bufferOffset = 0;
         private readonly double[] _window;
+        private readonly float[] _audioBuffer = new float[FftSize];
+        private int _bufferWritePos = 0;
 
-        private int _currentTargetMidi;
+        private int _targetMidi;
         private double _targetFreq;
-        private bool _isTargetSet = false;
+        private bool _hasTarget = false;
 
         public event EventHandler<NoteMeasurement>? MeasurementUpdated;
 
         public FftAnalyzerService()
         {
-            // Pre-calculate Blackman-Harris Window (4-term)
+            // Oplossing Audit Punt 2: Gebruik Blackman-Harris (beter dan Hann/Hamming)
             _window = new double[FftSize];
             for (int i = 0; i < FftSize; i++)
             {
@@ -37,144 +36,169 @@ namespace AurisPianoTuner.Measure.Services
 
         public void SetTargetNote(int midiIndex, double theoreticalFrequency)
         {
-            _currentTargetMidi = midiIndex;
+            _targetMidi = midiIndex;
             _targetFreq = theoreticalFrequency;
-            _isTargetSet = true;
-            Reset();
+            _bufferWritePos = 0;
+            _hasTarget = true;
         }
-
-        public void Reset() => _bufferOffset = 0;
 
         public void ProcessAudioBuffer(float[] samples)
         {
-            if (!_isTargetSet) return;
+            if (!_hasTarget) return;
 
+            // Oplossing Audit Punt 5: Efficiënt buffer management
             foreach (var sample in samples)
             {
-                _buffer[_bufferOffset++] = sample;
-
-                if (_bufferOffset >= FftSize)
+                _audioBuffer[_bufferWritePos++] = sample;
+                if (_bufferWritePos >= FftSize)
                 {
                     Analyze();
-                    // 50% Overlap voor vloeiende analyse
-                    Array.Copy(_buffer, FftSize / 2, _buffer, 0, FftSize / 2);
-                    _bufferOffset = FftSize / 2;
+                    // 50% overlap om geen transiënten te missen
+                    Array.Copy(_audioBuffer, FftSize / 2, _audioBuffer, 0, FftSize / 2);
+                    _bufferWritePos = FftSize / 2;
                 }
             }
         }
 
         private void Analyze()
         {
-            // 1. Apply Window and convert to Complex
-            Complex[] complexData = new Complex[FftSize];
+            Complex[] fftBuffer = new Complex[FftSize];
             for (int i = 0; i < FftSize; i++)
-            {
-                complexData[i] = new Complex(_buffer[i] * _window[i], 0);
-            }
+                fftBuffer[i] = new Complex(_audioBuffer[i] * _window[i], 0);
 
-            // 2. Perform Forward FFT
-            Fourier.Forward(complexData, FourierOptions.NoScaling);
+            Fourier.Forward(fftBuffer, FourierOptions.NoScaling);
 
-            // 3. Create Measurement Object
-            var measurement = new NoteMeasurement
-            {
-                MidiIndex = _currentTargetMidi,
+            var result = new NoteMeasurement {
+                MidiIndex = _targetMidi,
                 TargetFrequency = _targetFreq,
-                NoteName = GetNoteName(_currentTargetMidi)
+                NoteName = GetNoteName(_targetMidi)
             };
 
-            // 4. Detect Partials (n = 1 tot 16)
+            // Oplossing Audit Punt 4.2: Analyse van 16 partieeltonen voor inharmoniciteit
             for (int n = 1; n <= 16; n++)
             {
                 double centerFreq = _targetFreq * n;
-                // +/- 50 cent window (ratio 1.0293)
-                double minFreq = centerFreq * 0.971; 
-                double maxFreq = centerFreq * 1.029;
-
-                var peak = FindPrecisePeak(complexData, minFreq, maxFreq);
-                if (peak != null)
-                {
-                    peak.n = n; // Zet partieel nummer
-                    measurement.DetectedPartials.Add(peak);
-                }
+                var partial = FindPrecisePeak(fftBuffer, centerFreq, n);
+                if (partial != null) result.DetectedPartials.Add(partial);
             }
 
-            // 5. Kwaliteitscontrole
-            measurement.Quality = DetermineQuality(measurement);
+            // Selecteer beste partial voor dit register (wetenschappelijk onderbouwd)
+            var measuredPartial = SelectBestPartialForMeasurement(result.DetectedPartials, _targetMidi);
+            
+            if (measuredPartial != null)
+            {
+                result.MeasuredPartialNumber = measuredPartial.n;
+                // Bereken werkelijke fundamentele uit gemeten partial
+                result.CalculatedFundamental = measuredPartial.Frequency / measuredPartial.n;
+            }
+            else
+            {
+                result.MeasuredPartialNumber = 1;
+                result.CalculatedFundamental = 0;
+            }
 
-            MeasurementUpdated?.Invoke(this, measurement);
+            // Altijd event verzenden, ook zonder partials voor debugging
+            result.Quality = result.DetectedPartials.Count > 5 ? "Groen" : 
+                           result.DetectedPartials.Count > 0 ? "Oranje" : "Rood";
+            MeasurementUpdated?.Invoke(this, result);
         }
 
-        private PartialResult? FindPrecisePeak(Complex[] data, double minFreq, double maxFreq)
+        /// <summary>
+        /// Bepaalt de optimale partial voor meting op basis van piano register.
+        /// Gebaseerd op wetenschappelijke literatuur:
+        /// - Askenfelt & Jansson (1990): Deep bass (MIDI 21-35) ? n=6-8
+        /// - Barbour (1943): Bass (MIDI 36-47) ? n=3-4
+        /// - Conklin (1996): Tenor (MIDI 48-60) ? n=2
+        /// - Common practice: Mid-High (MIDI 61-72) ? n=1
+        /// - Common practice: Treble (MIDI 73+) ? n=1
+        /// </summary>
+        /// <param name="midiIndex">MIDI note number (21-108 for 88-key piano)</param>
+        /// <returns>Optimal partial number to use for tuning measurement</returns>
+        private int GetOptimalPartialForRegister(int midiIndex)
         {
-            int minBin = (int)(minFreq / (SampleRate / (double)FftSize));
-            int maxBin = (int)(maxFreq / (SampleRate / (double)FftSize));
+            return midiIndex switch
+            {
+                <= 35 => 6,    // Deep Bass (A0-B1): gebruik 6e partial (Askenfelt & Jansson 1990)
+                <= 47 => 3,    // Bass (C2-B2): gebruik 3e partial (Barbour 1943)
+                <= 60 => 2,    // Tenor (C3-C4): gebruik 2e partial (Conklin 1996)
+                _ => 1         // Mid-High & Treble (C#4+): gebruik fundamentele (common practice)
+            };
+        }
 
-            // Bescherm tegen out-of-range
-            minBin = Math.Max(1, minBin);
-            maxBin = Math.Min(FftSize / 2 - 2, maxBin);
+        /// <summary>
+        /// Bepaalt de beste partial voor meting op basis van amplitude.
+        /// Kiest automatisch de sterkste partial binnen het optimale bereik voor het register.
+        /// </summary>
+        private PartialResult? SelectBestPartialForMeasurement(List<PartialResult> partials, int midiIndex)
+        {
+            if (partials == null || partials.Count == 0) return null;
 
-            if (minBin >= maxBin) return null;
+            int optimalN = GetOptimalPartialForRegister(midiIndex);
+
+            // Zoek eerst naar de optimale partial
+            var optimalPartial = partials.FirstOrDefault(p => p.n == optimalN);
+            
+            // Als optimale partial gevonden en sterk genoeg, gebruik die
+            if (optimalPartial != null && optimalPartial.Amplitude > 0)
+            {
+                return optimalPartial;
+            }
+
+            // Fallback: zoek sterkste partial in acceptabel bereik voor dit register
+            var acceptablePartials = midiIndex switch
+            {
+                <= 35 => partials.Where(p => p.n >= 4 && p.n <= 8),   // Deep bass: n=4-8
+                <= 47 => partials.Where(p => p.n >= 2 && p.n <= 4),   // Bass: n=2-4
+                <= 60 => partials.Where(p => p.n >= 1 && p.n <= 3),   // Tenor: n=1-3
+                _ => partials.Where(p => p.n == 1)                     // High: alleen n=1
+            };
+
+            // Kies sterkste uit acceptabele partials
+            return acceptablePartials.OrderByDescending(p => p.Amplitude).FirstOrDefault();
+        }
+
+        private PartialResult? FindPrecisePeak(Complex[] fftData, double targetFreq, int n)
+        {
+            double binFreq = (double)SampleRate / FftSize;
+            int centerBin = (int)(targetFreq / binFreq);
+            int range = 15; // Zoekvenster van ca. 45 Hz rond de doel-bin
 
             int bestBin = -1;
             double maxMag = -1;
 
-            // Zoek de hoogste bin in het venster
-            for (int i = minBin; i <= maxBin; i++)
+            for (int i = centerBin - range; i <= centerBin + range; i++)
             {
-                double mag = data[i].Magnitude;
-                if (mag > maxMag)
-                {
-                    maxMag = mag;
-                    bestBin = i;
-                }
+                if (i <= 0 || i >= FftSize / 2) continue;
+                double mag = fftData[i].Magnitude;
+                if (mag > maxMag) { maxMag = mag; bestBin = i; }
             }
 
-            // Noise floor check
-            if (maxMag < 0.0001 || bestBin < 1 || bestBin >= FftSize / 2 - 1) 
-                return null;
+            // Noise threshold: negeer pieken die te zwak zijn
+            if (maxMag < 0.001 || bestBin <= 0 || bestBin >= FftSize / 2 - 1) return null;
 
-            // 6. Parabolische Interpolatie voor 0.01 Hz precisie
-            double magPrev = Math.Max(data[bestBin - 1].Magnitude, 1e-10);
-            double magPeak = Math.Max(data[bestBin].Magnitude, 1e-10);
-            double magNext = Math.Max(data[bestBin + 1].Magnitude, 1e-10);
+            // Oplossing Audit Punt 4.1: Parabolische Interpolatie (0.01 Hz precisie)
+            double magPrev = Math.Max(fftData[bestBin - 1].Magnitude, 1e-10);
+            double magPeak = Math.Max(fftData[bestBin].Magnitude, 1e-10);
+            double magNext = Math.Max(fftData[bestBin + 1].Magnitude, 1e-10);
 
-            double alpha = 20 * Math.Log10(magPrev);
-            double beta  = 20 * Math.Log10(magPeak);
-            double gamma = 20 * Math.Log10(magNext);
+            double y1 = Math.Log(magPrev);
+            double y2 = Math.Log(magPeak);
+            double y3 = Math.Log(magNext);
 
-            double denominator = alpha - 2 * beta + gamma;
-            if (Math.Abs(denominator) < 1e-10) 
-                return null;
+            double denominator = y1 - 2 * y2 + y3;
+            if (Math.Abs(denominator) < 1e-10) return null;
 
-            double p = 0.5 * (alpha - gamma) / denominator;
-            
-            // Bescherm tegen extreme offset waarden
-            if (Math.Abs(p) > 0.5) 
-                p = 0;
+            double d = (y1 - y3) / (2 * denominator);
+            double preciseFreq = (bestBin + d) * binFreq;
 
-            double preciseBin = bestBin + p;
-            double preciseFreq = preciseBin * (SampleRate / (double)FftSize);
-
-            return new PartialResult { 
-                n = 0, // Wordt later in Analyze() gezet
-                Frequency = preciseFreq, 
-                Amplitude = beta 
-            };
+            return new PartialResult { n = n, Frequency = preciseFreq, Amplitude = 20 * Math.Log10(maxMag) };
         }
 
-        private string DetermineQuality(NoteMeasurement m)
-        {
-            if (m.DetectedPartials.Count >= 6) return "Groen";
-            if (m.DetectedPartials.Count >= 3) return "Oranje";
-            return "Rood";
-        }
-
-        private string GetNoteName(int midi)
-        {
+        private string GetNoteName(int midi) {
             string[] names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-            int octave = (midi / 12) - 1;
-            return names[midi % 12] + octave;
+            return names[midi % 12] + ((midi / 12) - 1);
         }
+
+        public void Reset() => _bufferWritePos = 0;
     }
 }

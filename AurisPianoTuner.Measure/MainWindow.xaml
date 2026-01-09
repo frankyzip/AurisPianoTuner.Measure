@@ -20,10 +20,15 @@
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Project:" Foreground="White" VerticalAlignment="Center" Margin="10,0"/>
                 <TextBox Width="150" x:Name="TxtProjectName"/>
+                
                 <!-- ASIO driver selection -->
                 <TextBlock Text="ASIO Driver:" Foreground="White" VerticalAlignment="Center" Margin="20,0,5,0"/>
                 <ComboBox x:Name="ComboAsioDrivers" Width="200" SelectionChanged="ComboAsioDrivers_SelectionChanged"/>
-                <!-- Voeg hier de overige metadata velden toe -->
+                
+                <!-- Save/Load buttons -->
+                <Button x:Name="BtnSave" Content="💾 Opslaan" Margin="20,0,5,0" Padding="10,2" Background="#4CAF50" Foreground="White" FontWeight="Bold"/>
+                <Button x:Name="BtnLoad" Content="📂 Laden" Margin="5,0" Padding="10,2" Background="#2196F3" Foreground="White" FontWeight="Bold"/>
+                
                 <Button Content="Audio Settings" Margin="20,0" Padding="10,2"/>
             </StackPanel>
         </Border>
@@ -53,7 +58,7 @@
             </Border>
 
             <!-- Spectrum Placeholder -->
-            <Border Grid.Column="1" Margin="10" Background="Black" CornerRadius="5">
+            <Border x:Name="SpectrumBorder" Grid.Column="1" Margin="10" Background="Black" CornerRadius="5">
                 <TextBlock Text="Spectrum Visualizer" Foreground="Lime" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
         </Grid>
@@ -65,7 +70,7 @@
 
         <!-- Start/Stop Knop zwevend -->
         <StackPanel Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="30">
-            <Button x:Name="BtnStart" Content="START RECORDING" Background="Green" Foreground="White" Width="150" Height="50" FontWeight="Bold"/>
+            <Button x:Name="BtnStart" Content="START MEASUREMENT" Background="Green" Foreground="White" Width="180" Height="50" FontWeight="Bold" IsEnabled="False"/>
         </StackPanel>
     </Grid>
 </Window>
